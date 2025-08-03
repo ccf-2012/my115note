@@ -56,7 +56,8 @@ python make_strm_115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open 
 python tp.py '/volume1/strm/emby/emby/misc/NFWeb' -d '/volume1/strm/emby/ln2misc' --tmdb-api-key='your tmdb api key' --emby-bracket --tmdb-origin-name --sep-area5 
 ```
 * 注意源文件在115上的路径在 openlist 可访问到的位置
-
+* 对剧集下再分二级子目录的资源，可以使用 [tp_subdir.sh](tp_subdir.sh) 进行遍历处理
+  
 
 ----
 
