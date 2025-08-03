@@ -1,0 +1,8 @@
+p115client
+flask
+flask_restful
+flask_httpauth
+watchdog
+pytz
+rich
+psutil
