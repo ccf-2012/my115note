@@ -22,8 +22,11 @@ python strm115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open list i
 ```sh
 python make_strm_115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  3214185321546576924
 # 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为3214185321546576924， 并设其挂载路径为 /volume1/mnt/alist115/
-# 在本机的输出位置为 /volume1/strm/olist/emby
+# 在本机的输出位置为 /volume1/strm/olist/emby，生成比如这样的 strm:
+# 在 /volume1/strm/olist/emby/日韩剧集/kr/一起用餐吧 (2013) {tmdb-62411}/S01 位置，文件名为 Let's Eat (2013) S01E01  - 1080p.H264.AAC_CMCTV.strm，内容为：
+# http://<your open list ip>:5244/d/volume1/mnt/alist115/日韩剧集/kr/一起用餐吧%20(2013)%20{tmdb-62411}/S01/Let's%20Eat%20(2013)%20S01E01%20%20-%201080p.H264.AAC_CMCTV.mkv
 ```
+* [download.py](download.py) 需要替换 pip 安装的 p115client 库的 tool 目录下同名文件，uv 安装的环境下，在类似 `.venv/lib/python3.12/site-packages/p115client/tool` 这样的地方
 
 
 ## Emby播放生成的strm库
