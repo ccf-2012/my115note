@@ -85,7 +85,7 @@ def make_strm_func(
                 predicate=predicate, 
                 base_url=base_url,
                 app='harmony',
-                clean=True,
+                clean=False,
                 replace=False,
                 olist_url=True,
                 base_path=base_path,
