@@ -65,6 +65,7 @@ def make_strm(
     predicate: None | Literal[1, 2, 3, 4, 5, 6, 7] | str | tuple[str, ...] | Callable[[dict], bool] = None, 
     base_url: str = "", 
     base_path: str = "",
+    replace: bool = False,
     max_workers: None | int = None, 
 ) -> dict:
     """快速创建 STRM 文件
@@ -107,6 +108,7 @@ def make_strm(
     files = iter_files_shortcut(client, **params)
     if predicate is not None:
         files = filter(predicate, files)
+    mode = "w" if replace else "x"
     attrs: list[dict] = []
     add_attr = attrs.append
     result: dict = {"cid": cid, "data": attrs}
@@ -126,11 +128,11 @@ def make_strm(
                 url = path
             try:
                 try:
-                    open(local_path, "w", encoding="utf-8").write(url)
+                    open(local_path, mode, encoding="utf-8").write(url)
                     attr["success"] = True
                 except FileNotFoundError:
                     makedirs(dirname(local_path), exist_ok=True)
-                    open(local_path, "w", encoding="utf-8").write(url)
+                    open(local_path, mode, encoding="utf-8").write(url)
                 attr["success"] = True
             except Exception as e:
                 attr["success"] = False
@@ -169,6 +171,10 @@ if __name__ == "__main__":
             client = P115Client(cookies_path)
         else:
             client = P115Client(check_for_relogin=True)
+            # 从实例中获取 cookie 字符串
+            current_cookies = client.cookies_str
+            print(f"当前的 Cookie 字符串是: {current_cookies}")
+
     if predicate := args.filter:
         if predicate in ("1", "2", "3", "4", "5", "6", "7"):
             predicate = int(predicate)
@@ -178,7 +184,8 @@ if __name__ == "__main__":
         client, 
         cid=args.cid, 
         save_dir=args.save_dir, 
-        predicate=4, 
+        predicate=predicate, 
+        replace=False,
         base_url=args.base_url,
         base_path=args.base_path,
         max_workers=args.max_workers, 
