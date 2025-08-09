@@ -1,8 +1,8 @@
 # my 115 note
 
 
-## alist / openlist
-* 原 alist 分支出来叫 openlist,安装  https://doc.oplist.org.cn/guide
+## openlist
+* 安装  https://doc.oplist.org.cn/guide
 * 添加115网盘，使用 [getcookie.py](https://gist.github.com/ChenyangGao/d26a592a0aeb13465511c885d5c7ad61) 获取 cookie
 * Note: 关掉设置 -> 全局 -> 签名所有
 * 测试：浏览 115 网盘内容，获取链接，确认链接可播放
@@ -12,16 +12,16 @@
 * 当前有多种生成strm的程序，这里选择的是 [p115client库](https://github.com/ChenyangGao/p115client) 作者的代码，稍作改写见： [strm115.py](strm115.py) 
 * 需要使用[getcookie.py](https://gist.github.com/ChenyangGao/d26a592a0aeb13465511c885d5c7ad61)准备115 cookie，存在当前目录下的 `115-cookies.txt` 文件中
 ```sh
-python strm115.py  -s /volume1/strm/olist/emby -f mkv,mp4,iso -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  3214185321546576924
-# 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为3214185321546576924， 并设其挂载路径为 /volume1/mnt/alist115/
+python strm115.py  -s /volume1/strm/olist/emby -f mkv,mp4,iso -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  为32146486546924
+# 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为32146486546924， 并设其挂载路径为 /volume1/mnt/alist115/
 # 在本机的输出位置为 /volume1/strm/olist/emby
 ```
 >  此 strm115.py 可完成初始的strm 创建，如果需要周期运行，跳过已存在文件，清理源上已经没有的文件，需要使用 [p115client库](https://github.com/ChenyangGao/p115client) 中的 [make_strm()函数](https://p115client.readthedocs.io/en/latest/reference/tool/download.html#p115client.tool.download.make_strm)，示例程序参见 [make_strm_115.py](make_strm_115.py)。但其生成的链接包含uid,pickcode,sha1等信息，在openlist连115网盘时不需要，另外其生成的路径需要切掉openlist挂载的根目录部分，因此需要作少量修改，见[download.py](download.py)
 
 * 使用 [make_strm_115.py](make_strm_115.py) 的命令，类同 [strm115.py](strm115.py) 
 ```sh
-python make_strm_115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  3214185321546576924
-# 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为3214185321546576924， 并设其挂载路径为 /volume1/mnt/alist115/
+python make_strm_115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  为32146486546924
+# 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为32146486546924， 并设其挂载路径为 /volume1/mnt/alist115/
 # 在本机的输出位置为 /volume1/strm/olist/emby，生成比如这样的 strm:
 # 在 /volume1/strm/olist/emby/日韩剧集/kr/一起用餐吧 (2013) {tmdb-62411}/S01 位置，文件名为 Let's Eat (2013) S01E01  - 1080p.H264.AAC_CMCTV.strm，内容为：
 # http://<your open list ip>:5244/d/volume1/mnt/alist115/日韩剧集/kr/一起用餐吧%20(2013)%20{tmdb-62411}/S01/Let's%20Eat%20(2013)%20S01E01%20%20-%201080p.H264.AAC_CMCTV.mkv
