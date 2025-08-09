@@ -117,9 +117,9 @@ def make_strm(
             path = attr["path"]
             if base_path:
                 path = cut_base_path(path, base_path)
-            path = splitext(path)[0]
+            # path = splitext(path)[0]
 
-            local_path = attr["local_path"] = join(save_dir, "." + path + ".strm")
+            local_path = attr["local_path"] = join(save_dir, "." + splitext(path)[0] + ".strm")
             if base_url:
                 url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
             else:
