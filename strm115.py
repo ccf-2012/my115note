@@ -18,6 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--save-dir", default="", help="保存在本地的目录，默认为当前工作目录")
     parser.add_argument("-b", "--base-url", default="", help="302 服务器的基地址，如果为空（默认），则在 STRM 文件中直接保存路径")
     parser.add_argument("-bp", "--base-path", default="", help="302 服务器的基路径，如果为空（默认），则在 STRM 文件中直接保存路径")
+    parser.add_argument("-r", "--replace", action="store_true", default=False, help="是否替换已存在的文件")
     parser.add_argument("-f", "--filter", help="""筛选条件：
   - 默认不进行筛选
   - 数字 1-7 其一，筛选特定类型文件
@@ -185,7 +186,7 @@ if __name__ == "__main__":
         cid=args.cid, 
         save_dir=args.save_dir, 
         predicate=predicate, 
-        replace=False,
+        replace=args.replace,
         base_url=args.base_url,
         base_path=args.base_path,
         max_workers=args.max_workers, 

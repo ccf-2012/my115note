@@ -12,7 +12,7 @@
 * 当前有多种生成strm的程序，这里选择的是 [p115client库](https://github.com/ChenyangGao/p115client) 作者的代码，稍作改写见： [strm115.py](strm115.py) 
 * 需要使用[getcookie.py](https://gist.github.com/ChenyangGao/d26a592a0aeb13465511c885d5c7ad61)准备115 cookie，存在当前目录下的 `115-cookies.txt` 文件中
 ```sh
-python strm115.py  -s /volume1/strm/olist/emby -f 4 -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  3214185321546576924
+python strm115.py  -s /volume1/strm/olist/emby -f mkv,mp4,iso -b "http://<your open list ip>:5244/d/volume1/mnt/alist115/" -bp "emby"  3214185321546576924
 # 在 openlist 配置中，指定 /emby 作为302转发根目录，其目录id 为3214185321546576924， 并设其挂载路径为 /volume1/mnt/alist115/
 # 在本机的输出位置为 /volume1/strm/olist/emby
 ```
