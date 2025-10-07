@@ -1,6 +1,28 @@
 # my 115 note
 
 
+## 20251007
+1. strm
+```sh
+# 选一个目录，如 emby，其 cid 比如为  301931009490474532
+# 5245 是自定端口，与tiny302.py 中所写对应
+python strm115.py  -s /volume1/emby/t115 -f 4 -b "http://<外网访问 域名/ip>:5245/t115/" 301931009490474532
+```
+
+2. getcookie.py
+```sh
+# -s 保存到 115-cookies.txt
+python getcookie.py alipaymini  -s
+```
+
+3. tiny302
+```sh
+python tiny302.py
+```
+
+> 不用 openlist 了，也不用反代了，直接用 p115client 的 tiny302.py
+
+
 ## openlist
 * 安装  https://doc.oplist.org.cn/guide
 * 添加115网盘，使用 [getcookie.py](https://gist.github.com/ChenyangGao/d26a592a0aeb13465511c885d5c7ad61) 获取 cookie

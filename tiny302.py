@@ -11,7 +11,7 @@ if __name__ == "__main__":
     client = P115Client(Path("./115-cookies.txt").expanduser(), check_for_relogin=True)
     run(
         make_application(client, debug=False), 
-        host="0.0.0.0", 
+        host="::", 
         port=5245, 
         proxy_headers=True, 
         server_header=False, 
