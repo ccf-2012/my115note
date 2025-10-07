@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 "扫码获取 115 cookie"
 __author__ = "ChenyangGao <https://chenyanggao.github.io>"
-__version__ = (0, 0, 2)
+__version__ = (0, 0, 3)
 __all__ = [
     "AppEnum", "get_qrcode_token", "get_qrcode_status", "post_qrcode_result",
     "get_qrcode", "login_with_qrcode",
 ]
+
 if __name__ == "__main__":
     from argparse import ArgumentParser, RawTextHelpFormatter
+    from pathlib import Path
+
     parser = ArgumentParser(description="""\
 扫码获取 115 cookie
 默认在命令行输出，需要安装 qrcode: pip install qrcode
@@ -16,16 +19,21 @@ if __name__ == "__main__":
 """, formatter_class=RawTextHelpFormatter)
     parser.add_argument("app", nargs="?", choices=("web", "android", "ios", "linux", "mac", "windows", "tv", "alipaymini", "wechatmini", "qandroid", "harmony", "115android", "ipad"), default="web", help="选择一个 app 进行登录，注意：这会把已经登录的相同 app 踢下线")
     parser.add_argument("-o", "--open-qrcode", action="store_true", help="打开二维码图片，而不是在命令行输出")
+    parser.add_argument("-s", "--save", action="store_true", help="将 cookie 文件保存在当前目录")
     parser.add_argument("-v", "--version", action="store_true", help="输出版本号")
     args = parser.parse_args()
+
     if args.version:
         print(".".join(map(str, __version__)))
         raise SystemExit(0)
+
 from enum import Enum
 from json import loads
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
+
 AppEnum = Enum("AppEnum", "web, android, ios, linux, mac, windows, tv, alipaymini, wechatmini, qandroid, harmony, 115android, ipad")
+
 def get_enum_name(val, cls):
     if isinstance(val, cls):
         return val.name
@@ -35,6 +43,7 @@ def get_enum_name(val, cls):
     except KeyError:
         pass
     return cls(val).name
+
 def get_qrcode_token():
     """获取登录二维码，扫码可用
     GET https://qrcodeapi.115.com/api/1.0/web/1.0/token/
@@ -42,6 +51,7 @@ def get_qrcode_token():
     """
     api = "https://qrcodeapi.115.com/api/1.0/web/1.0/token/"
     return loads(urlopen(api).read())
+
 def get_qrcode_status(payload):
     """获取二维码的状态（未扫描、已扫描、已登录、已取消、已过期等）
     GET https://qrcodeapi.115.com/get/status/
@@ -53,6 +63,7 @@ def get_qrcode_status(payload):
     """
     api = "https://qrcodeapi.115.com/get/status/?" + urlencode(payload)
     return loads(urlopen(api).read())
+
 def post_qrcode_result(uid, app="web"):
     """获取扫码登录的结果，并且绑定设备，包含 cookie
     POST https://passportapi.115.com/app/1.0/{app}/1.0/login/qrcode/
@@ -75,12 +86,14 @@ def post_qrcode_result(uid, app="web"):
     payload = {"app": app, "account": uid}
     api = "https://passportapi.115.com/app/1.0/%s/1.0/login/qrcode/" % app
     return loads(urlopen(Request(api, data=urlencode(payload).encode("utf-8"), method="POST")).read())
+
 def get_qrcode(uid):
     """获取二维码图片（注意不是链接）
     :return: 一个文件对象，可以读取
     """
     url = "https://qrcodeapi.115.com/api/1.0/mac/1.0/qrcode?uid=%s" % uid
     return urlopen(url)
+
 def login_with_qrcode(app="web", scan_in_console=True):
     """用二维码登录
     :param app: 扫码绑定的设备，可以是 int、str 或者 AppEnum
@@ -152,7 +165,20 @@ def login_with_qrcode(app="web", scan_in_console=True):
         else:
             raise OSError("qrcode: aborted with %r" % resp)
     return post_qrcode_result(qrcode_token["uid"], app)
+
 if __name__ == "__main__":
     resp = login_with_qrcode(args.app, scan_in_console=not args.open_qrcode)
+    cookie_str = "; ".join("%s=%s" % t for t in resp['data']['cookie'].items())
     print()
-    print("; ".join("%s=%s" % t for t in resp['data']['cookie'].items()))
+    print(cookie_str)
+
+    if args.save:
+        path = Path("115-cookies.txt")
+        path.write_text(cookie_str)
+        print(f"\nCookie 已保存到当前目录下的文件: {path.resolve()}")
+    # By default, it just prints to stdout. If you want to write to home by default,
+    # you could uncomment the following lines.
+    # else:
+    #     path = Path("~/115-cookies.txt").expanduser()
+    #     path.write_text(cookie_str)
+    #     print(f"\nCookie 已保存到主目录下的文件: {path.resolve()}")
