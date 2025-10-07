@@ -17,8 +17,6 @@ if __name__ == "__main__":
     parser.add_argument("-cp", "--cookies-path", help="cookies 文件保存路径，默认为当前工作目录下的 115-cookies.txt")
     parser.add_argument("-s", "--save-dir", default="", help="保存在本地的目录，默认为当前工作目录")
     parser.add_argument("-b", "--base-url", default="", help="302 服务器的基地址，如果为空（默认），则在 STRM 文件中直接保存路径")
-    parser.add_argument("-bp", "--base-path", default="", help="302 服务器的基路径，如果为空（默认），则在 STRM 文件中直接保存路径")
-    parser.add_argument("-r", "--replace", action="store_true", default=False, help="是否替换已存在的文件")
     parser.add_argument("-f", "--filter", help="""筛选条件：
   - 默认不进行筛选
   - 数字 1-7 其一，筛选特定类型文件
@@ -40,7 +38,6 @@ from collections.abc import Callable
 from datetime import datetime
 from os import makedirs, PathLike
 from os.path import join
-from os.path import splitext
 from posixpath import dirname
 from typing import Literal
 
@@ -48,16 +45,6 @@ from encode_uri import encode_uri_component_loose
 from p115client import P115Client
 from p115client.tool import iter_files_shortcut
 
-def cut_base_path(full_path, base_path):
-    """使用字符串操作切除头部"""
-    # 确保base_path以/结尾，避免部分匹配
-    if not base_path.startswith('/'):
-        base_path = '/' + base_path
-
-    if full_path.startswith(base_path):
-        return full_path[len(base_path):]
-    else:
-        return full_path  # 如果不匹配，返回原路径
 
 def make_strm(
     client: str | PathLike | P115Client, 
@@ -65,8 +52,6 @@ def make_strm(
     save_dir: str = "", 
     predicate: None | Literal[1, 2, 3, 4, 5, 6, 7] | str | tuple[str, ...] | Callable[[dict], bool] = None, 
     base_url: str = "", 
-    base_path: str = "",
-    replace: bool = False,
     max_workers: None | int = None, 
 ) -> dict:
     """快速创建 STRM 文件
@@ -109,7 +94,6 @@ def make_strm(
     files = iter_files_shortcut(client, **params)
     if predicate is not None:
         files = filter(predicate, files)
-    mode = "w" if replace else "x"
     attrs: list[dict] = []
     add_attr = attrs.append
     result: dict = {"cid": cid, "data": attrs}
@@ -118,22 +102,18 @@ def make_strm(
         for attr in files:
             add_attr(attr)
             path = attr["path"]
-            if base_path:
-                path = cut_base_path(path, base_path)
-            # path = splitext(path)[0]
-
-            local_path = attr["local_path"] = join(save_dir, "." + splitext(path)[0] + ".strm")
+            local_path = attr["local_path"] = join(save_dir, "." + path + ".strm")
             if base_url:
-                url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
+                url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}&sha1={attr['sha1']}&size={attr['size']}"
             else:
                 url = path
             try:
                 try:
-                    open(local_path, mode, encoding="utf-8").write(url)
+                    open(local_path, "w", encoding="utf-8").write(url)
                     attr["success"] = True
                 except FileNotFoundError:
                     makedirs(dirname(local_path), exist_ok=True)
-                    open(local_path, mode, encoding="utf-8").write(url)
+                    open(local_path, "w", encoding="utf-8").write(url)
                 attr["success"] = True
             except Exception as e:
                 attr["success"] = False
@@ -172,10 +152,6 @@ if __name__ == "__main__":
             client = P115Client(cookies_path)
         else:
             client = P115Client(check_for_relogin=True)
-            # 从实例中获取 cookie 字符串
-            current_cookies = client.cookies_str
-            print(f"当前的 Cookie 字符串是: {current_cookies}")
-
     if predicate := args.filter:
         if predicate in ("1", "2", "3", "4", "5", "6", "7"):
             predicate = int(predicate)
@@ -186,9 +162,7 @@ if __name__ == "__main__":
         cid=args.cid, 
         save_dir=args.save_dir, 
         predicate=predicate, 
-        replace=args.replace,
-        base_url=args.base_url,
-        base_path=args.base_path,
+        base_url=args.base_url, 
         max_workers=args.max_workers, 
     )
     print(result["stats"])

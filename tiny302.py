@@ -12,7 +12,7 @@ if __name__ == "__main__":
     run(
         make_application(client, debug=False), 
         host="0.0.0.0", 
-        port=8000, 
+        port=5245, 
         proxy_headers=True, 
         server_header=False, 
         forwarded_allow_ips="*", 
