@@ -6,3 +6,8 @@ watchdog
 pytz
 rich
 psutil
+blacksheep
+uvicorn
+httpx
+anyio
+sniffio
