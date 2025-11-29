@@ -11,3 +11,6 @@ uvicorn
 httpx
 anyio
 sniffio
+p115open302
+p115tiny302
+sqlitetools
