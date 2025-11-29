@@ -125,7 +125,8 @@ def make_strm(
             local_path = attr["local_path"] = join(save_dir, "." + splitext(path)[0] + ".strm")
             if base_url:
                 # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}&sha1={attr['sha1']}&size={attr['size']}"
-                url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
+                # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
+                url = f"{base_url}{path}"
             else:
                 url = path
             try:
