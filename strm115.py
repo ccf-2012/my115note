@@ -18,7 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--save-dir", default="", help="保存在本地的目录，默认为当前工作目录")
     parser.add_argument("-b", "--base-url", default="", help="302 服务器的基地址，如果为空（默认），则在 STRM 文件中直接保存路径")
     parser.add_argument("-bp", "--base-path", default="", help="302 服务器的基路径，如果为空（默认），则在 STRM 文件中直接保存路径")
-    parser.add_argument("-r", "--replace", action="store_true", default=False, help="是否替换已存在的文件")
+    parser.add_argument("-op", "--openlist", action="store_true", default=False, help="创建 OpenList 链接")
     parser.add_argument("-f", "--filter", help="""筛选条件：
   - 默认不进行筛选
   - 数字 1-7 其一，筛选特定类型文件
@@ -66,7 +66,7 @@ def make_strm(
     predicate: None | Literal[1, 2, 3, 4, 5, 6, 7] | str | tuple[str, ...] | Callable[[dict], bool] = None, 
     base_url: str = "", 
     base_path: str = "",
-    replace: bool = False,
+    openlist: bool = False,
     max_workers: None | int = None, 
 ) -> dict:
     """快速创建 STRM 文件
@@ -109,7 +109,8 @@ def make_strm(
     files = iter_files_shortcut(client, **params)
     if predicate is not None:
         files = filter(predicate, files)
-    mode = "w" if replace else "x"
+    # mode = "w" if replace else "x"
+    mode = "w"
     attrs: list[dict] = []
     add_attr = attrs.append
     result: dict = {"cid": cid, "data": attrs}
@@ -124,9 +125,12 @@ def make_strm(
 
             local_path = attr["local_path"] = join(save_dir, "." + splitext(path)[0] + ".strm")
             if base_url:
-                # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}&sha1={attr['sha1']}&size={attr['size']}"
-                # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
-                url = f"{base_url}{path}"
+                if openlist:
+                    # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
+                    url = f"{base_url}{path}"
+                else:
+                    # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}&sha1={attr['sha1']}&size={attr['size']}"
+                    url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}"
             else:
                 url = path
             try:
@@ -188,7 +192,7 @@ if __name__ == "__main__":
         cid=args.cid, 
         save_dir=args.save_dir, 
         predicate=predicate, 
-        replace=args.replace,
+        openlist=args.openlist,
         base_url=args.base_url,
         base_path=args.base_path,
         max_workers=args.max_workers, 
