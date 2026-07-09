@@ -16,7 +16,7 @@ client.refresh_access_token()
 
 run(
     make_application(client, debug=False), 
-    host="::", 
+    host=None, 
     port=5245, 
     proxy_headers=True, 
     server_header=False, 
