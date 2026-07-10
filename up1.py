@@ -151,7 +151,7 @@ def main(argv: None | list[str] | Namespace = None, /):
         attr = {
             "path": fspath(path), 
             "name": path.name, 
-            "is_directory": path.is_dir(), 
+            "is_dir": path.is_dir(), 
         }
         attr.update(zip(("mode", "inode", "dev", "nlink", "uid", "gid", "size", "atime", "mtime", "ctime"), path.stat()))
         return attr
@@ -257,7 +257,7 @@ def main(argv: None | list[str] | Namespace = None, /):
             name = cast(str, dst_attr["name"])
         try:
             task.times += 1
-            if src_attr["is_directory"]:
+            if src_attr["is_dir"]:
                 subdattrs: None | dict = None
                 if not name:
                     dst_id = dst_pid
@@ -267,7 +267,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                             resp = check_response(client.fs_mkdir_app(name, dst_pid))
                             name = cast(str, resp["file_name"])
                             dst_id = int(resp["file_id"])
-                            task.dst_attr = {"id": dst_id, "parent_id": dst_pid, "name": name, "is_directory": True}
+                            task.dst_attr = {"id": dst_id, "parent_id": dst_pid, "name": name, "is_dir": True}
                             subdattrs = {}
                             console_print(f"[bold green][GOOD][/bold green] 📂 创建目录: [blue underline]{src_path!r}[/blue underline] ➜ [blue underline]{name!r}[/blue underline] in {dst_pid}")
                         else:
@@ -277,7 +277,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                         dst_id = dst_attr["id"]
                 if subdattrs is None:
                     subdattrs = {
-                        (attr["name"], attr["is_directory"]): attr 
+                        (attr["name"], attr["is_dir"]): attr 
                         for attr in fs.listdir_attr(dst_id)
                     }
                 subattrs = [
@@ -286,15 +286,15 @@ def main(argv: None | list[str] | Namespace = None, /):
                 ]
                 update_tasks(
                     total=len(subattrs), 
-                    files=sum(not a["is_directory"] for a in subattrs), 
-                    size=sum(a["size"] for a in subattrs if not a["is_directory"]), 
+                    files=sum(not a["is_dir"] for a in subattrs), 
+                    size=sum(a["size"] for a in subattrs if not a["is_dir"]), 
                 )
                 progress.update(statistics_bar, description=get_stat_str(), total=tasks["size"])
                 pending_to_remove: list[int] = []
                 for subattr in subattrs:
                     subname = subattr["name"]
                     subpath = subattr["path"]
-                    is_directory = subattr["is_directory"]
+                    is_directory = subattr["is_dir"]
                     key = subname, is_directory
                     if key in subdattrs:
                         subdattr = subdattrs[key]
@@ -398,7 +398,7 @@ def main(argv: None | list[str] | Namespace = None, /):
             success_tasks[src_path] = unfinished_tasks.pop(src_path)
         except BaseException as e:
             task.reasons.append(e)
-            update_errors(e, src_attr["is_directory"])
+            update_errors(e, src_attr["is_dir"])
             if max_retries < 0:
                 status_code = get_status_code(e)
                 if status_code:
@@ -411,14 +411,14 @@ def main(argv: None | list[str] | Namespace = None, /):
                 console_print(f"""\
 [bold red][FAIL][/bold red] ♻️ 发生错误（将重试）: [blue underline]{src_path!r}[/blue underline] ➜ [blue underline]{name!r}[/blue underline] in {dst_pid}
     ├ [red]{type(e).__module__}.{type(e).__qualname__}[/red]: {e}""")
-                update_retry(1, not src_attr["is_directory"])
+                update_retry(1, not src_attr["is_dir"])
                 submit(task)
             else:
                 console_print(f"""\
 [bold red][FAIL][/bold red] 💀 发生错误（将抛弃）: [blue underline]{src_path!r}[/blue underline] ➜ [blue underline]{name!r}[/blue underline] in {dst_pid}
 {indent(format_exc().strip(), "    ├ ")}""")
                 progress.update(statistics_bar, description=get_stat_str())
-                update_failed(1, not src_attr["is_directory"], src_attr.get("size"))
+                update_failed(1, not src_attr["is_dir"], src_attr.get("size"))
                 failed_tasks[src_path] = unfinished_tasks.pop(src_path)
                 if len(task.reasons) == 1:
                     raise
@@ -427,7 +427,7 @@ def main(argv: None | list[str] | Namespace = None, /):
     src_attr = get_path_attr(normpath(src_path))
     dst_attr: None | dict = None
     name: str = src_attr["name"]
-    is_directory = src_attr["is_directory"]
+    is_directory = src_attr["is_dir"]
     with Progress(
         SpinnerColumn(), 
         *Progress.get_default_columns(), 
@@ -461,7 +461,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                     dst_pid = dst_attr["id"]
                     name = dst_name
                 else:
-                    if dst_attr["is_directory"]:
+                    if dst_attr["is_dir"]:
                         dst_pid = dst_attr["id"]
                         dst_path += "/" + name
                     else:
@@ -475,12 +475,12 @@ def main(argv: None | list[str] | Namespace = None, /):
                 dst_pid = dst_attr["id"]
             elif not dst_attr:
                 dst_attr = fs.get_attr(dst_pid)
-                if not dst_attr["is_directory"]:
+                if not dst_attr["is_dir"]:
                     raise NotADirectoryError(errno.ENOTDIR, dst_path)
             dst_path = dst_attr["path"]
         elif dst_pid and not dst_attr:
             dst_attr = fs.get_attr(dst_pid)
-            if dst_attr["is_directory"]:
+            if dst_attr["is_dir"]:
                 dst_path = dst_attr["path"] + "/" + name
             else:
                 dst_pid = dst_attr["parent_id"]
@@ -496,7 +496,7 @@ def main(argv: None | list[str] | Namespace = None, /):
         }
         stats["src_path"] = src_attr["path"]
         stats["dst_path"] = dst_path
-        update_tasks(1, not src_attr["is_directory"], src_attr.get("size"))
+        update_tasks(1, not src_attr["is_dir"], src_attr.get("size"))
         get_stat_str = lambda: f"📊 [cyan bold]statistics[/cyan bold] 🧮 {tasks['total']} = 💯 {success['total']} + ⛔ {failed['total']} + ⏳ {unfinished['total']}"
         statistics_bar = progress.add_task(get_stat_str(), total=tasks["size"])
         closed = False
