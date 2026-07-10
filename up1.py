@@ -344,7 +344,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                     "filesha1": filehash.hexdigest(), 
                     "filesize": filesize, 
                     "partsize": part_size, 
-                    "callback": partial(add_report, attr=src_attr), 
+                    "reporthook": partial(add_report, attr=src_attr), 
                 }
                 for i in range(5):
                     data = upload_init(
@@ -369,7 +369,11 @@ def main(argv: None | list[str] | Namespace = None, /):
                         break
                     except MultipartUploadAbort as e:
                         exc = e
-                        ticket = kwargs["multipart_resume_data"] = e.ticket
+                        data = e.args[0] if e.args else {}
+                        if isinstance(data, dict):
+                            kwargs["upload_id"] = data.get("upload_id", "")
+                            kwargs["callback"] = data.get("callback")
+                        ticket = kwargs.get("upload_id", "")
                 else:
                     raise exc
                 check_response(resp)
