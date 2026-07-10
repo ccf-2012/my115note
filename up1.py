@@ -273,7 +273,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                         else:
                             dst_id = cast(Mapping, dst_attr)["id"]
                     except FileExistsError:
-                        dst_attr = task.dst_attr = fs.attr([name], pid=dst_pid, ensure_dir=True)
+                        dst_attr = task.dst_attr = fs.get_attr([name], pid=dst_pid, ensure_dir=True)
                         dst_id = dst_attr["id"]
                 if subdattrs is None:
                     subdattrs = {
@@ -455,7 +455,7 @@ def main(argv: None | list[str] | Namespace = None, /):
                 dst_path = pnormpath("/" + dst_path)
                 dst_dir, dst_name = psplit(dst_path)
                 try:
-                    dst_attr = fs.attr(dst_path)
+                    dst_attr = fs.get_attr(dst_path)
                 except FileNotFoundError:
                     dst_attr = fs.makedirs(dst_dir, pid=0, exist_ok=True)
                     dst_pid = dst_attr["id"]
@@ -474,12 +474,12 @@ def main(argv: None | list[str] | Namespace = None, /):
                 dst_attr = fs.makedirs(name, pid=dst_pid, exist_ok=True)
                 dst_pid = dst_attr["id"]
             elif not dst_attr:
-                dst_attr = fs.attr(dst_pid)
+                dst_attr = fs.get_attr(dst_pid)
                 if not dst_attr["is_directory"]:
                     raise NotADirectoryError(errno.ENOTDIR, dst_path)
             dst_path = dst_attr["path"]
         elif dst_pid and not dst_attr:
-            dst_attr = fs.attr(dst_pid)
+            dst_attr = fs.get_attr(dst_pid)
             if dst_attr["is_directory"]:
                 dst_path = dst_attr["path"] + "/" + name
             else:
