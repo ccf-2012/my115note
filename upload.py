@@ -117,7 +117,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--exts",
-        default="mkv,mp4,ts,iso,avi,rmvb,wmv,webm,mp3,flac,ape,wav,acc,ogg,ass,m4a,srt,vtt,sub,",
+        default="mkv,mp4,ts,iso,avi,rmvb,wmv,webm,mp3,flac,ape,wav,acc,ogg,ass,m4a,srt,vtt,sub",
         help=(
             "Comma-separated list of allowed file extensions (no dots). "
             "Defaults to common media/subtitle/audio types. Example: mkv,mp4,avi"
