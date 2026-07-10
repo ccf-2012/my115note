@@ -343,8 +343,8 @@ def main(argv: None | list[str] | Namespace = None, /):
                     "filename": name, 
                     "filesha1": filehash.hexdigest(), 
                     "filesize": filesize, 
-                    "pid": dst_pid, 
                     "partsize": part_size, 
+                    "callback": partial(add_report, attr=src_attr), 
                 }
                 for i in range(5):
                     data = upload_init(
@@ -362,11 +362,9 @@ def main(argv: None | list[str] | Namespace = None, /):
     ├ ticket = {ticket}""")
                     try:
                         resp = client.upload_file(
-                            src_path, 
-                            name, 
-                            pid=dst_pid, 
-                            make_reporthook=partial(add_report, attr=src_attr), 
-                            **kwargs, 
+                            src_path,
+                            dst_pid,
+                            **kwargs,
                         )
                         break
                     except MultipartUploadAbort as e:
