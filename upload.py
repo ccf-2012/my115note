@@ -10,6 +10,7 @@ import p115oss.api as p115oss_api
 import p115oss.upload as p115oss_upload
 from p115oss.oss import oss_url
 from tqdm import tqdm
+import traceback
 
 
 def patch_oss_multipart_upload_part_iter() -> None:
@@ -114,6 +115,14 @@ def parse_args() -> argparse.Namespace:
         default="36.2.28",
         help="App version header used for upload initialization.",
     )
+    parser.add_argument(
+        "--exts",
+        default="mkv,mp4,ts,iso,avi,rmvb,wmv,webm,mp3,flac,ape,wav,acc,ogg,ass,m4a,srt,vtt,sub,",
+        help=(
+            "Comma-separated list of allowed file extensions (no dots). "
+            "Defaults to common media/subtitle/audio types. Example: mkv,mp4,avi"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -154,8 +163,27 @@ def upload_path(path, filename, client, pid: int):
             total = None
 
     with tqdm(total=total, unit="B", unit_scale=True, desc=f"Uploading {filename}") as t:
-        for _ in uploader.iter_upload(reporthook=t.update):
-            pass
+        # Print uploader debug info before actual upload to help diagnose auth errors
+        try:
+            if hasattr(uploader, "url"):
+                print(f"uploader.url: {uploader.url}")
+            if hasattr(uploader, "upload_id"):
+                print(f"uploader.upload_id: {uploader.upload_id}")
+            # Try to get a signed upload url for part 1 (may raise if not available)
+            try:
+                upload_url_info = uploader.upload_url(1)
+                print(f"uploader.upload_url(1): {upload_url_info}")
+            except Exception:
+                # not critical, keep going
+                pass
+
+            for _ in uploader.iter_upload(reporthook=t.update):
+                pass
+        except Exception:
+            # Print full traceback to help pinpoint where 401 originates
+            print("Upload raised exception:")
+            traceback.print_exc()
+            raise
 
     return uploader.complete()
 
@@ -174,7 +202,28 @@ def main() -> None:
 
     results = []
     dir_cache: dict[str, int] = {}
+    # Build allowed extensions set from CLI (normalize to lowercase, no leading dots)
+    exts_raw = args.exts or ""
+    allowed_exts = set()
+    for e in (x.strip().lower() for x in exts_raw.split(",")):
+        if not e:
+            continue
+        if e.startswith("."):
+            e = e[1:]
+        allowed_exts.add(e)
     for path, relative_path in iter_upload_paths(args.path):
+        # Filter by extension if configured
+        try:
+            rel_name = relative_path if isinstance(relative_path, str) else str(relative_path)
+        except Exception:
+            rel_name = str(relative_path)
+        suffix = ""
+        if "." in rel_name:
+            suffix = rel_name.rsplit(".", 1)[1].lower()
+        if allowed_exts and suffix not in allowed_exts:
+            print(f"Skipping (ext filter): {rel_name} -> .{suffix}")
+            results.append({"path": str(path), "status": "skip", "reason": "ext_filter", "ext": suffix})
+            continue
         relative_dir = Path(relative_path).parent
         if relative_dir == Path("."):
             target_pid = args.pid
@@ -193,11 +242,53 @@ def main() -> None:
             results.append({"path": str(path), "status": "fail", "error": str(exc)})
         else:
             print(result)
+            # Detect fast-upload (秒传) from the response.
+            # The API typically signals reuse/秒传 with either `reuse: True`
+            # or `status` values like 2 or 7 (existence / reused on server).
+            is_fast = False
+            status_val = None
+            if isinstance(result, dict):
+                is_fast = bool(result.get("reuse"))
+                status_val = result.get("status")
+            if is_fast or status_val in (2, 7):
+                info = []
+                if isinstance(result, dict):
+                    pick = result.get("data", {}).get("pickcode") or result.get("pickcode")
+                    fid = result.get("data", {}).get("id") or result.get("fileid")
+                    if pick:
+                        info.append(f"pickcode={pick}")
+                    if fid:
+                        info.append(f"id={fid}")
+                print("秒传成功。" + (" (" + ", ".join(info) + ")" if info else ""))
+            else:
+                print("已完整上传（非秒传）。")
+
             results.append({"path": str(path), "status": "ok", "result": result})
 
     failures = [item for item in results if item["status"] != "ok"]
-    if failures:
-        print(f"\nFinished with {len(failures)} failed uploads.")
+    # Summary counts
+    total_files = len(results)
+    skipped = [r for r in results if r.get("status") == "skip"]
+    failed = [r for r in results if r.get("status") == "fail"]
+    ok_items = [r for r in results if r.get("status") == "ok"]
+    # Count fast-upload (秒传) among ok items
+    fast_count = 0
+    for r in ok_items:
+        res = r.get("result")
+        if isinstance(res, dict):
+            if bool(res.get("reuse")) or res.get("status") in (2, 7):
+                fast_count += 1
+    uploaded_count = len(ok_items) - fast_count
+
+    print("\nSummary:")
+    print(f"  Total files processed: {total_files}")
+    print(f"  Skipped by ext filter: {len(skipped)}")
+    print(f"  Successful fast-upload (秒传): {fast_count}")
+    print(f"  Uploaded (actual upload performed): {uploaded_count}")
+    print(f"  Failed uploads: {len(failed)}")
+
+    if failed:
+        print(f"\nFinished with {len(failed)} failed uploads.")
         raise SystemExit(1)
 
 
