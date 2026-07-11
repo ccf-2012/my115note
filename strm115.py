@@ -31,6 +31,7 @@ if __name__ == "__main__":
     - 7: 书籍
   - 后缀（扩展名），如果有多个用英文逗号,隔开""")
     parser.add_argument("-m", "--max-workers", type=int, help="最大工作线程数，默认自动确定")
+    parser.add_argument("--sync", action="store_true", help="同步 STRM 文件：删除已失效的 STRM，创建缺失的 STRM，跳过已有的 STRM")
     args = parser.parse_args()
     if not args.cid:
         parser.parse_args(["-h"])
@@ -38,9 +39,10 @@ if __name__ == "__main__":
 
 from collections.abc import Callable
 from datetime import datetime
-from os import makedirs, PathLike
+from os import makedirs, PathLike, remove
 from os.path import join
 from os.path import splitext
+from pathlib import Path
 from posixpath import dirname
 from typing import Literal
 
@@ -68,6 +70,7 @@ def make_strm(
     base_path: str = "",
     openlist: bool = False,
     max_workers: None | int = None, 
+    sync: bool = False,
 ) -> dict:
     """快速创建 STRM 文件
 
@@ -92,9 +95,12 @@ def make_strm(
 
     :param base_url: 302 服务器的基地址，如果为空，则在 STRM 文件中直接保存路径
     :param max_workers: 最大并发数，如果为 None，则自动确定
+    :param sync: 是否执行 STRM 同步；会删除本地多余 STRM，创建缺失 STRM，保留已有 STRM
     """
     if isinstance(client, (str, PathLike)):
         client = P115Client(client, check_for_relogin=True)
+    save_dir_path = Path(save_dir or ".")
+    existing_strm_paths = set(save_dir_path.rglob("*.strm")) if sync and save_dir_path.exists() else set()
     params: dict = {"cid": cid, "max_workers": max_workers, "with_path": True}
     if isinstance(predicate, (int, str)):
         params["is_skim"] = False
@@ -110,11 +116,13 @@ def make_strm(
     files = iter_files_shortcut(client, app='chrome', **params)
     if predicate is not None:
         files = filter(predicate, files)
-    # mode = "w" if replace else "x"
     mode = "w"
     attrs: list[dict] = []
     add_attr = attrs.append
     result: dict = {"cid": cid, "data": attrs}
+    expected_paths: set[Path] = set()
+    created = 0
+    skipped = 0
     start_time = datetime.now()
     try:
         for attr in files:
@@ -122,26 +130,28 @@ def make_strm(
             path = attr["path"]
             if base_path:
                 path = cut_base_path(path, base_path)
-            # path = splitext(path)[0]
-
-            local_path = attr["local_path"] = join(save_dir, "." + splitext(path)[0] + ".strm")
+            local_path = Path(join(save_dir, "." + splitext(path)[0] + ".strm"))
+            expected_paths.add(local_path.resolve())
+            if local_path.exists():
+                attr["success"] = True
+                attr["skipped"] = True
+                skipped += 1
+                continue
             if base_url:
                 if openlist:
-                    # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}"
                     url = f"{base_url}{path}"
                 else:
-                    # url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}&sha1={attr['sha1']}&size={attr['size']}"
                     url = f"{base_url}{encode_uri_component_loose(path, quote_slash=False)}?id={attr['id']}&pickcode={attr['pickcode']}"
             else:
                 url = path
             try:
                 try:
                     open(local_path, mode, encoding="utf-8").write(url)
-                    attr["success"] = True
                 except FileNotFoundError:
-                    makedirs(dirname(local_path), exist_ok=True)
+                    makedirs(dirname(str(local_path)), exist_ok=True)
                     open(local_path, mode, encoding="utf-8").write(url)
                 attr["success"] = True
+                created += 1
             except Exception as e:
                 attr["success"] = False
                 attr["error"] = e
@@ -150,11 +160,25 @@ def make_strm(
     except:
         result["success"] = False
     finally:
+        deleted = 0
+        if sync and result["success"]:
+            stale_paths = existing_strm_paths - expected_paths
+            for stale_path in stale_paths:
+                try:
+                    remove(stale_path)
+                    deleted += 1
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    print(f"delete stale STRM failed: {stale_path}: {e}")
         stop_time = datetime.now()
         count = len(attrs)
         count_success = sum(a["success"] for a in attrs)
         result["stats"] = {
             "count": count, 
+            "created": created,
+            "skipped": skipped,
+            "deleted": deleted,
             "success": count_success, 
             "failed": count - count_success, 
             "start_time": str(start_time), 
@@ -197,6 +221,7 @@ if __name__ == "__main__":
         base_url=args.base_url,
         base_path=args.base_path,
         max_workers=args.max_workers, 
+        sync=args.sync,
     )
     print(result["stats"])
 
