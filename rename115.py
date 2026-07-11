@@ -73,14 +73,14 @@ def build_rename_tasks(files: Iterable[dict], pattern: re.Pattern, replacement: 
     return tasks
 
 
-def perform_rename(client: P115Client, tasks: list[tuple[int | str, str]], app: str = "web") -> dict:
+def perform_rename(client: P115Client, tasks: list[tuple[int | str, str]], app: str = "os_windows") -> dict:
     if not tasks:
         return {"success": True, "renamed": 0}
     payload = {str(fid): new_name for fid, new_name in tasks}
-    if app == "web":
-        resp = client.fs_rename(payload)
-    else:
+    try:
         resp = client.fs_rename_app(payload, app=app)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
     return {"success": True, "renamed": len(tasks), "response": resp}
 
 
@@ -103,7 +103,7 @@ def main() -> int:
     parser.add_argument("-c", "--cookies", help="115 登录 cookies 字符串")
     parser.add_argument("-cp", "--cookies-path",  default="./115-cookies.txt", help="cookies 文件路径")
     parser.add_argument("-m", "--max-workers", type=int, help="iter_files_shortcut 最大工作线程数")
-    parser.add_argument("--app", default="web", help="重命名 API 使用的 app，默认 web")
+    parser.add_argument("--app", default="os_windows", help="重命名 API 使用的 app，默认 os_windows")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要改名的文件，不执行重命名")
     parser.add_argument("-y", "--yes", action="store_true", help="直接执行，不提示确认")
     args = parser.parse_args()
