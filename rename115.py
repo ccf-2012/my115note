@@ -7,11 +7,11 @@ from argparse import ArgumentParser, RawTextHelpFormatter
 from pathlib import Path
 from typing import Iterable
 import re
-import sys
 
 from p115client import P115Client
-from p115client.tool import iter_files_shortcut, iterdir
+from p115client.tool import iterdir
 from p115client.tool.iterdir import overview_attr
+import time
 
 
 def get_client(cookies: str | Path | None, cookies_path: str | None) -> P115Client:
@@ -73,15 +73,39 @@ def build_rename_tasks(files: Iterable[dict], pattern: re.Pattern, replacement: 
     return tasks
 
 
-def perform_rename(client: P115Client, tasks: list[tuple[int | str, str]], app: str = "os_windows") -> dict:
+def perform_rename(client: P115Client, tasks: list[tuple[int | str, str]]) -> dict:
+    """Use webapi `fs_rename` first; if it fails, fall back to per-item `fs_rename` calls."""
     if not tasks:
         return {"success": True, "renamed": 0}
-    payload = {str(fid): new_name for fid, new_name in tasks}
+
     try:
-        resp = client.fs_rename_app(payload, app=app)
+        resp = client.fs_rename(tasks)
     except Exception as e:
-        return {"success": False, "error": str(e)}
-    return {"success": True, "renamed": len(tasks), "response": resp}
+        resp = {"state": False, "error": str(e)}
+
+    if isinstance(resp, dict) and resp.get("state"):
+        return {"success": True, "renamed": len(tasks), "response": resp, "note": "used fs_rename (webapi)"}
+
+    per_results = []
+    count_ok = 0
+    for fid, new_name in tasks:
+        try:
+            r = client.fs_rename((fid, new_name))
+            ok = isinstance(r, dict) and (r.get("state") is True or r.get("errno") == 0)
+            per_results.append({"fid": fid, "ok": ok, "response": r})
+            if ok:
+                count_ok += 1
+        except Exception as e:
+            per_results.append({"fid": fid, "ok": False, "error": str(e)})
+        time.sleep(0.12)
+
+    return {
+        "success": count_ok == len(tasks),
+        "renamed_attempted": len(tasks),
+        "renamed": count_ok,
+        "response": resp,
+        "fallback": per_results,
+    }
 
 
 def confirm(prompt: str) -> bool:
@@ -103,7 +127,7 @@ def main() -> int:
     parser.add_argument("-c", "--cookies", help="115 登录 cookies 字符串")
     parser.add_argument("-cp", "--cookies-path",  default="./115-cookies.txt", help="cookies 文件路径")
     parser.add_argument("-m", "--max-workers", type=int, help="iter_files_shortcut 最大工作线程数")
-    parser.add_argument("--app", default="os_windows", help="重命名 API 使用的 app，默认 os_windows")
+    parser.add_argument("--batch-size", type=int, default=200, help="每次提交改名请求的批量大小，默认 200")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要改名的文件，不执行重命名")
     parser.add_argument("-y", "--yes", action="store_true", help="直接执行，不提示确认")
     args = parser.parse_args()
@@ -118,17 +142,7 @@ def main() -> int:
     if args.suffix:
         suffixes = [part.strip().lower() for part in args.suffix.split(",") if part.strip()]
 
-    if cookies := args.cookies:
-        client = P115Client(cookies, app="chrome")
-    elif cookies_path := args.cookies_path:
-        client = P115Client(Path(cookies_path), app="chrome")
-    else:
-        cookies_path = Path("./115-cookies.txt")
-        if not cookies_path.exists():
-            cookies_path = Path("./115-cookies.txt").expanduser()
-        if cookies_path.exists():
-            client = P115Client(cookies_path, app='chrome')
-
+    client = get_client(args.cookies, args.cookies_path)
     print(f"登录应用: {client.login_app()}")
     print(f"扫描目录: {args.cid}")
 
@@ -152,12 +166,23 @@ def main() -> int:
             print("已取消。")
             return 0
 
-    result = perform_rename(client, tasks, app=args.app)
-    if result.get("success"):
-        print(f"已提交 {result['renamed']} 个改名请求。")
-        return 0
-    print("改名失败。", result)
-    return 1
+    batch_size = getattr(args, "batch_size", 200)
+    total_submitted = 0
+    for i in range(0, len(tasks), batch_size):
+        chunk = tasks[i : i + batch_size]
+        result = perform_rename(client, chunk)
+        submitted = result.get("renamed", result.get("renamed_attempted", len(chunk)))
+        total_submitted += submitted
+        if result.get("fallback"):
+            print(
+                f"批次{i // batch_size + 1}: 回退逐条重命名，成功 {result['renamed']}/{len(chunk)}"
+            )
+        elif result.get("note"):
+            print(f"批次{i // batch_size + 1}: 批量重命名成功，共 {submitted} 个")
+        else:
+            print(f"批次{i // batch_size + 1}: 批量重命名失败，成功 {submitted}/{len(chunk)} 个")
+    print(f"共处理 {len(tasks)} 个改名任务，已提交 {total_submitted} 次重命名请求")
+    return 0
 
 
 if __name__ == "__main__":
