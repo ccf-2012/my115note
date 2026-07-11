@@ -106,7 +106,8 @@ def make_strm(
     elif isinstance(predicate, tuple):
         suffixes = predicate
         predicate = lambda attr: attr["name"].endswith(suffixes)
-    files = iter_files_shortcut(client, **params)
+    # use chrome app endpoint by default to avoid Method Not Allowed (405)
+    files = iter_files_shortcut(client, app='chrome', **params)
     if predicate is not None:
         files = filter(predicate, files)
     # mode = "w" if replace else "x"
@@ -175,7 +176,7 @@ if __name__ == "__main__":
         if not cookies_path.exists():
             cookies_path = Path("~/115-cookies.txt").expanduser()
         if cookies_path.exists():
-            client = P115Client(cookies_path)
+            client = P115Client(cookies_path, app='alipaymini')
         else:
             client = P115Client(check_for_relogin=True)
             # 从实例中获取 cookie 字符串
