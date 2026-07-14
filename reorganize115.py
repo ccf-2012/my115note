@@ -66,7 +66,7 @@ def fs_makedirs_open(client: P115OpenClient, path: str, pid: int | str = 0) -> d
                 
     return {"state": True, "error": "", "data": {"file_id": str(current_pid)}}
 
-def parse_strm_file(file_path: Path) -> Optional[dict]:
+def parse_strm_file(file_path: Path, client: P115OpenClient) -> Optional[dict]:
     try:
         content = file_path.read_text(encoding="utf-8").strip()
     except Exception as e:
@@ -90,55 +90,48 @@ def parse_strm_file(file_path: Path) -> Optional[dict]:
     try:
         parsed = urllib.parse.urlparse(url)
         params = urllib.parse.parse_qs(parsed.query)
-        fid = params.get("id", [None])[0]
+        raw_id = params.get("id", [None])[0]
         pickcode = params.get("pickcode", [None])[0]
-        return {
-            "strm_path": file_path,
-            "url": url,
-            "id": fid,
-            "pickcode": pickcode,
-            "parsed_url": parsed
-        }
-    except Exception as e:
-        print(f"Error parsing URL from {file_path}: {e}")
-        return None
-
-def query_single_file_metadata(client: P115OpenClient, task: dict) -> Optional[dict]:
-    """Retrieve metadata from 115 using file ID or pickcode."""
-    raw_id = task["id"]
-    pickcode = task["pickcode"]
-    
-    # Try to convert pickcode/id to a numerical ID if possible using client.to_id
-    fid = None
-    try:
+        
+        fid = None
         if raw_id:
             fid = client.to_id(raw_id)
         elif pickcode:
             fid = client.to_id(pickcode)
-    except Exception as e:
-        print(f"Warning: Failed to convert identifier to ID for {task['strm_path'].name}: {e}")
-
-    if not fid:
-        print(f"Warning: No valid ID or pickcode found in {task['strm_path'].name}")
-        return None
-
-    try:
-        res = client.fs_info(fid)
-        if isinstance(res, dict) and res.get("state") is True:
-            data = res.get("data", {})
-            return {
-                "task": task,
-                "fid": fid,
-                "file_name": data.get("file_name"),
-                "paths": data.get("paths", []),
-                "size": data.get("size"),
-            }
-        else:
-            err_msg = res.get("error") or res.get("message") if isinstance(res, dict) else str(res)
-            print(f"Warning: 115 fs_info failed for ID {fid} (from {task['strm_path'].name}): {err_msg}")
+            
+        if not fid:
+            print(f"Warning: No valid ID or pickcode found in {file_path.name}")
             return None
+            
+        # Parse path and extract old_115_path & url_prefix_path
+        decoded_path = urllib.parse.unquote(parsed.path)
+        if "//" in decoded_path:
+            prefix, _, suffix = decoded_path.partition("//")
+            old_115_path = "/" + suffix.lstrip("/")
+            url_prefix_path = prefix + "//"
+        else:
+            url_prefix_path = "/"
+            old_115_path = decoded_path
+            for mount_p in ["/d/open115", "/d/115", "/d/open", "/d"]:
+                if decoded_path.startswith(mount_p):
+                    url_prefix_path = mount_p + "/"
+                    old_115_path = "/" + decoded_path[len(mount_p):].lstrip("/")
+                    break
+                    
+        file_name = posixpath.basename(old_115_path)
+        
+        return {
+            "strm_path": file_path,
+            "url": url,
+            "fid": fid,
+            "pickcode": pickcode,
+            "parsed_url": parsed,
+            "old_115_path": old_115_path,
+            "url_prefix_path": url_prefix_path,
+            "file_name": file_name
+        }
     except Exception as e:
-        print(f"Error querying 115 metadata for ID {fid} (from {task['strm_path'].name}): {e}")
+        print(f"Error parsing URL from {file_path}: {e}")
         return None
 
 def confirm(prompt: str) -> bool:
@@ -157,7 +150,6 @@ def main() -> int:
     parser.add_argument("-t", "--target-root", default="/emby2", help="115网盘上的目标根目录，默认: /emby2")
     parser.add_argument("-c", "--cookies", help="115 登录 cookies 字符串")
     parser.add_argument("-cp", "--cookies-path", help="cookies 文件路径 (默认自动查找 115-cookies.txt)")
-    parser.add_argument("-w", "--max-workers", type=int, default=10, help="并发查询 115 元数据的最大线程数，默认 10")
     parser.add_argument("--update-local", action="store_true", help="移动 115 文件后，同步更新本地 .strm 文件中的 URL 路径")
     parser.add_argument("--dry-run", action="store_true", help="测试模式：只打印将要执行的操作，不实际修改网盘或本地文件")
     parser.add_argument("-y", "--yes", action="store_true", help="直接执行，不提示确认")
@@ -184,9 +176,13 @@ def main() -> int:
 
     print(f"找到 {len(strm_files)} 个本地 .strm 文件，正在解析 URL...")
 
+    # Re-use client cookies logic
+    client = get_client(args.cookies, args.cookies_path)
+    print(f"成功登录 115 账号")
+
     tasks = []
     for f in strm_files:
-        info = parse_strm_file(f)
+        info = parse_strm_file(f, client)
         if info:
             tasks.append(info)
 
@@ -194,40 +190,15 @@ def main() -> int:
         print("没有成功解析出任何 115 文件的 URL。")
         return 0
 
-    print(f"成功解析 {len(tasks)} 个文件的 115 信息。正在从 115 网盘查询文件元数据 (并发数: {args.max_workers})...")
-
-    # Re-use client cookies logic
-    client = get_client(args.cookies, args.cookies_path)
-    print(f"成功登录 115 账号")
-
-    metadata_results = []
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        future_to_task = {executor.submit(query_single_file_metadata, client, task): task for task in tasks}
-        for future in as_completed(future_to_task):
-            res = future.result()
-            if res:
-                metadata_results.append(res)
-
-    print(f"元数据查询完成。成功获取 {len(metadata_results)}/{len(tasks)} 个文件的 115 网盘元数据。")
-
-    # Step 4: Calculate mapping and group by target directories
+    # Calculate mapping and group by target directories
     # We will build a list of movements: (fid, old_115_path, new_115_dir_path, new_115_path, local_strm_info)
     move_tasks = []
     skipped_count = 0
 
-    for item in metadata_results:
-        task = item["task"]
-        fid = item["fid"]
-        file_name = item["file_name"]
-        paths = item["paths"]
-        
-        # Build old 115 full path
-        # paths example: [{'file_id': 0, 'file_name': '根目录'}, {'file_id': '...', 'file_name': 'emby'}, ...]
-        if len(paths) > 1:
-            old_115_dir = "/" + "/".join(p["file_name"] for p in paths[1:])
-        else:
-            old_115_dir = "/"
-        old_115_path = posixpath.join(old_115_dir, file_name)
+    for task in tasks:
+        fid = task["fid"]
+        file_name = task["file_name"]
+        old_115_path = task["old_115_path"]
 
         # Calculate relative directory path of local .strm file parent directory relative to src_root
         local_strm_file = task["strm_path"]
@@ -241,9 +212,7 @@ def main() -> int:
         new_115_dir_path = posixpath.join(target_root, rel_dir.as_posix())
         new_115_path = posixpath.join(new_115_dir_path, file_name)
 
-        # Check if the file is already in the target directory
-        # We can compare paths or folder IDs
-        # Since new target directory might not exist yet, we check path equality
+        # Check if the file path is already exactly matching the target path
         if old_115_path == new_115_path:
             skipped_count += 1
             continue
@@ -257,7 +226,7 @@ def main() -> int:
             "task": task
         })
 
-    print(f"分析完成：共需移动 {len(move_tasks)} 个文件 (已在目标位置跳过 {skipped_count} 个)。")
+    print(f"分析完成：共需移动 {len(move_tasks)} 个文件 (已在本地 URL 目标位置跳过 {skipped_count} 个)。")
 
     if not move_tasks:
         print("所有文件均已在目标位置，无需移动。")
@@ -302,7 +271,7 @@ def main() -> int:
             print(f"错误: 创建目录 {dpath} 时发生异常: {e}")
             return 1
 
-    # Step 6: Group file moves by target directory ID and execute
+    # Step 6: Group file moves by target directory ID, check if already present, and execute
     moves_by_pid = {}
     for task in move_tasks:
         dpath = task["new_115_dir_path"]
@@ -316,56 +285,92 @@ def main() -> int:
     updated_local_count = 0
 
     for pid, tasks_chunk in moves_by_pid.items():
-        fids_to_move = [t["fid"] for t in tasks_chunk]
         target_path = tasks_chunk[0]["new_115_dir_path"]
+        
+        # Check existing items in this target folder on 115 to skip files that have already been moved
+        existing_ids = set()
+        from p115client.tool import iterdir
+        try:
+            for item in iterdir(client, cid=pid):
+                if not item.get("is_dir"):
+                    existing_ids.add(int(item["id"]))
+        except Exception as e:
+            print(f"  [警告] 无法读取目标目录 {target_path} (ID: {pid}) 中的文件列表: {e}")
+
+        # Filter out tasks that are already in the target folder
+        to_move_tasks = []
+        for task in tasks_chunk:
+            fid = task["fid"]
+            if fid in existing_ids:
+                print(f"  [跳过] 115文件 ID {fid} ({task['file_name']}) 已经在目标目录 {target_path}")
+                # Auto-heal the local strm if update_local is requested and URL is outdated
+                if args.update_local:
+                    local_path = task["task"]["strm_path"]
+                    old_url = task["task"]["url"]
+                    parsed_url = task["task"]["parsed_url"]
+                    
+                    url_prefix_path = task["task"]["url_prefix_path"]
+                    new_path_seg = task["new_115_path"]
+                    
+                    new_decoded_url_path = url_prefix_path + new_path_seg
+                    new_url_path_quoted = urllib.parse.quote(new_decoded_url_path, safe="/")
+                    new_url = parsed_url._replace(path=new_url_path_quoted).geturl()
+                    
+                    if old_url != new_url:
+                        try:
+                            local_path.write_text(new_url, encoding="utf-8")
+                            updated_local_count += 1
+                            print(f"    [修复本地] {local_path.name}")
+                        except Exception as le:
+                            print(f"    [警告] 更新本地 strm 失败 {local_path.name}: {le}")
+                success_count += 1
+            else:
+                to_move_tasks.append(task)
+
+        if not to_move_tasks:
+            continue
+
+        fids_to_move = [t["fid"] for t in to_move_tasks]
         print(f"  正在将 {len(fids_to_move)} 个文件移动到 {target_path} (ID: {pid})...")
         
         try:
-            # fs_move accepts payload as list/iterable of fids, and target pid
             res = client.fs_move(fids_to_move, pid=pid)
             if isinstance(res, dict) and res.get("state") is True:
                 print(f"    成功移动 {len(fids_to_move)} 个文件。")
-                success_count += len(tasks_chunk)
+                success_count += len(to_move_tasks)
                 
-                # If update-local, update the local strm file content
+                # Update local strm files
                 if args.update_local:
-                    for task in tasks_chunk:
+                    for task in to_move_tasks:
                         local_path = task["task"]["strm_path"]
                         old_url = task["task"]["url"]
                         parsed_url = task["task"]["parsed_url"]
                         
-                        # Reconstruct the new URL
-                        # Extract the path from old URL and replace the old 115 path segment with new 115 path segment
-                        decoded_url_path = urllib.parse.unquote(parsed_url.path)
-                        old_path_seg = task["old_115_path"]
+                        url_prefix_path = task["task"]["url_prefix_path"]
                         new_path_seg = task["new_115_path"]
                         
-                        if decoded_url_path.endswith(old_path_seg):
-                            prefix = decoded_url_path[:-len(old_path_seg)]
-                            new_decoded_url_path = prefix + new_path_seg
-                            new_url_path_quoted = urllib.parse.quote(new_decoded_url_path, safe="/")
-                            new_url = parsed_url._replace(path=new_url_path_quoted).geturl()
-                            
-                            try:
-                                local_path.write_text(new_url, encoding="utf-8")
-                                updated_local_count += 1
-                            except Exception as le:
-                                print(f"      [警告] 更新本地 strm 文件失败 {local_path.name}: {le}")
-                        else:
-                            print(f"      [警告] 无法在旧 URL 中匹配 to 115 原路径，未更新本地 {local_path.name}")
+                        new_decoded_url_path = url_prefix_path + new_path_seg
+                        new_url_path_quoted = urllib.parse.quote(new_decoded_url_path, safe="/")
+                        new_url = parsed_url._replace(path=new_url_path_quoted).geturl()
+                        
+                        try:
+                            local_path.write_text(new_url, encoding="utf-8")
+                            updated_local_count += 1
+                        except Exception as le:
+                            print(f"      [警告] 更新本地 strm 文件失败 {local_path.name}: {le}")
             else:
                 err_msg = res.get("error") or res.get("message") if isinstance(res, dict) else str(res)
                 print(f"    [失败] 批量移动文件失败: {err_msg}")
-                failure_count += len(tasks_chunk)
+                failure_count += len(to_move_tasks)
         except Exception as e:
             print(f"    [异常] 移动文件时发生错误: {e}")
-            failure_count += len(tasks_chunk)
+            failure_count += len(to_move_tasks)
 
         # Brief delay to prevent hitting 115 rate limits
         time.sleep(0.5)
 
     print(f"\n整理任务完成统计：")
-    print(f"  成功移动: {success_count} 个文件")
+    print(f"  成功移动/校验: {success_count} 个文件")
     print(f"  移动失败: {failure_count} 个文件")
     if args.update_local:
         print(f"  更新本地 strm 文件: {updated_local_count} 个")
