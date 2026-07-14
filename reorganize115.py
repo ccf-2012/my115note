@@ -13,19 +13,58 @@ import time
 import urllib.parse
 from typing import Dict, List, Optional, Tuple, Any
 
-from p115client import P115Client
+from p115client import P115Client, P115OpenClient
 
-def get_client(cookies: str | Path | None, cookies_path: str | None) -> P115Client:
+def get_client(cookies: str | Path | None, cookies_path: str | None) -> P115OpenClient:
     if cookies:
-        return P115Client(cookies, check_for_relogin=True, app="chrome")
-    if cookies_path:
-        return P115Client(Path(cookies_path), check_for_relogin=True, app="chrome")
-    default_path = Path("115-cookies.txt")
-    if not default_path.exists():
-        default_path = Path("./115-cookies.txt").expanduser()
-    if default_path.exists():
-        return P115Client(default_path)
-    return P115Client(check_for_relogin=True)
+        client = P115Client(cookies, check_for_relogin=True, app="chrome")
+    elif cookies_path:
+        client = P115Client(Path(cookies_path), check_for_relogin=True, app="chrome")
+    else:
+        default_path = Path("115-cookies.txt")
+        if not default_path.exists():
+            default_path = Path("./115-cookies.txt").expanduser()
+        if default_path.exists():
+            client = P115Client(default_path)
+        else:
+            client = P115Client(check_for_relogin=True)
+    return client.login_another_open()
+
+def fs_makedirs_open(client: P115OpenClient, path: str, pid: int | str = 0) -> dict:
+    parts = [p for p in path.split("/") if p]
+    current_pid = pid
+    
+    for part in parts:
+        found = False
+        from p115client.tool import iterdir
+        try:
+            for item in iterdir(client, cid=current_pid):
+                if item.get("is_dir") and item.get("name") == part:
+                    current_pid = int(item["id"])
+                    found = True
+                    break
+        except Exception:
+            pass
+            
+        if not found:
+            res = client.fs_mkdir(part, pid=current_pid)
+            if isinstance(res, dict) and res.get("state") is True:
+                current_pid = int(res["data"]["file_id"])
+            elif isinstance(res, dict) and res.get("code") == 20004:
+                # Directory already exists, find its ID
+                found_after = False
+                for item in iterdir(client, cid=current_pid):
+                    if item.get("is_dir") and item.get("name") == part:
+                        current_pid = int(item["id"])
+                        found_after = True
+                        break
+                if not found_after:
+                    return {"state": False, "error": f"Folder already exists but could not retrieve its ID: {part}"}
+            else:
+                err_msg = res.get("error") or res.get("message") if isinstance(res, dict) else str(res)
+                return {"state": False, "error": f"Failed to create folder '{part}' under '{current_pid}': {err_msg}"}
+                
+    return {"state": True, "error": "", "data": {"file_id": str(current_pid)}}
 
 def parse_strm_file(file_path: Path) -> Optional[dict]:
     try:
@@ -64,7 +103,7 @@ def parse_strm_file(file_path: Path) -> Optional[dict]:
         print(f"Error parsing URL from {file_path}: {e}")
         return None
 
-def query_single_file_metadata(client: P115Client, task: dict) -> Optional[dict]:
+def query_single_file_metadata(client: P115OpenClient, task: dict) -> Optional[dict]:
     """Retrieve metadata from 115 using file ID or pickcode."""
     raw_id = task["id"]
     pickcode = task["pickcode"]
@@ -86,15 +125,16 @@ def query_single_file_metadata(client: P115Client, task: dict) -> Optional[dict]
     try:
         res = client.fs_info(fid)
         if isinstance(res, dict) and res.get("state") is True:
+            data = res.get("data", {})
             return {
                 "task": task,
                 "fid": fid,
-                "file_name": res.get("file_name"),
-                "paths": res.get("paths", []),
-                "size": res.get("size"),
+                "file_name": data.get("file_name"),
+                "paths": data.get("paths", []),
+                "size": data.get("size"),
             }
         else:
-            err_msg = res.get("error") if isinstance(res, dict) else str(res)
+            err_msg = res.get("error") or res.get("message") if isinstance(res, dict) else str(res)
             print(f"Warning: 115 fs_info failed for ID {fid} (from {task['strm_path'].name}): {err_msg}")
             return None
     except Exception as e:
@@ -248,8 +288,8 @@ def main() -> int:
 
     for dpath in unique_target_dirs:
         try:
-            # client.fs_makedirs returns leaf folder ID in data['file_id']
-            res = client.fs_makedirs(dpath)
+            # fs_makedirs_open returns leaf folder ID in data['file_id']
+            res = fs_makedirs_open(client, dpath)
             if isinstance(res, dict) and res.get("state") is True:
                 folder_id = int(res["data"]["file_id"])
                 dir_path_to_id[dpath] = folder_id
@@ -312,9 +352,9 @@ def main() -> int:
                             except Exception as le:
                                 print(f"      [警告] 更新本地 strm 文件失败 {local_path.name}: {le}")
                         else:
-                            print(f"      [警告] 无法在旧 URL 中匹配到 115 原路径，未更新本地 {local_path.name}")
+                            print(f"      [警告] 无法在旧 URL 中匹配 to 115 原路径，未更新本地 {local_path.name}")
             else:
-                err_msg = res.get("error") if isinstance(res, dict) else str(res)
+                err_msg = res.get("error") or res.get("message") if isinstance(res, dict) else str(res)
                 print(f"    [失败] 批量移动文件失败: {err_msg}")
                 failure_count += len(tasks_chunk)
         except Exception as e:
