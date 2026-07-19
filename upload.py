@@ -41,19 +41,25 @@ def parse_args() -> argparse.Namespace:
             "Defaults to common media/subtitle/audio types. Example: mkv,mp4,avi"
         ),
     )
+    parser.add_argument(
+        "--with-root",
+        action="store_true",
+        help="Upload directory with its root folder name.",
+    )
     return parser.parse_args()
 
 
-def iter_upload_paths(path: str):
+def iter_upload_paths(path: str, with_root: bool = False):
     if is_url(path):
         yield path, Path(urlparse(path).path).name or path
         return
 
     src = Path(path).expanduser()
     if src.is_dir():
+        base_dir = src.parent if with_root else src
         for file_path in sorted(src.rglob("*")):
             if file_path.is_file():
-                relative_name = file_path.relative_to(src).as_posix()
+                relative_name = file_path.relative_to(base_dir).as_posix()
                 yield file_path, relative_name
     else:
         if not src.exists():
@@ -110,7 +116,7 @@ def main() -> None:
         if e.startswith("."):
             e = e[1:]
         allowed_exts.add(e)
-    for path, relative_path in iter_upload_paths(args.path):
+    for path, relative_path in iter_upload_paths(args.path, with_root=args.with_root):
         # Filter by extension if configured
         try:
             rel_name = relative_path if isinstance(relative_path, str) else str(relative_path)
